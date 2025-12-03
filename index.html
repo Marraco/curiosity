@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Oracle AI: La Finestra de Cúbic</title>
+    <title>Oracle AI: La Finestra de Cúbic (Versió 404 Fix)</title>
     
     <!-- LLIBS DE CÀRREGA GLOBAL -->
     <!-- 1. THREE.js (Càrrega síncrona) -->
@@ -105,7 +105,7 @@
         }
 
 
-        /* Styling per als elements d'interacció (Botons) */
+        /* Estils per als elements d'interacció (Botons) */
         #controls {
             position: absolute;
             top: 10px;
@@ -147,7 +147,7 @@
     <div id="stats-panel">
         <div>FPS: <span id="fps-value">N/A</span></div>
         <div>LATÈNCIA: <span id="latency-value">N/A</span> ms</div>
-        <!-- Segell de versió (DEBUG) -->
+        <!-- Segell de versió (debugging) -->
         <div id="version-stamp"></div>
     </div>
 
@@ -170,7 +170,7 @@
         // =================================================================
 
         // Versió per a depuració: [vAAAAHHMM_HHmmss]
-        const VERSION_STAMP = "v20251203-122100"; 
+        const VERSION_STAMP = "v20251203-122400"; // Versió amb el fix del 404 
         
         let video, canvas, ctx, scene, camera, renderer;
         let cubeGroup; // Grup 3D per als cubs
@@ -479,8 +479,9 @@
             if (!mpVision) {
                 statusEl.textContent = "Carregant mòdul IA . . . (MediaPipe)";
                 try {
-                    // Utilitzem import() dinàmic per assegurar-nos que s'espera la càrrega del mòdul.
-                    const visionModule = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision.js");
+                    // FIX: HEM CANVIAT vision.js per vision_bundle.js per evitar el 404
+                    const VISION_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/vision_bundle.js";
+                    const visionModule = await import(VISION_URL);
                     mpVision = visionModule; // Guarda totes les exportacions
                     
                     statusEl.textContent = "DEPENDÈNCIES CARREGADES. Iniciant el sistema...";
@@ -531,7 +532,7 @@
             // Mostra el segell de versió quan es carrega la finestra
             const stampEl = document.getElementById('version-stamp');
             if (stampEl) {
-                // Format desitjat: V25.12.03 12:21 (YY.MM.DD HH:mm)
+                // Format desitjat: V25.12.03 12:24 (YY.MM.DD HH:mm)
                 const datePart = VERSION_STAMP.substring(1, 9); 
                 const timePart = VERSION_STAMP.substring(10); 
                 
