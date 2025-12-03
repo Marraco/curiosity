@@ -6,11 +6,12 @@
     <title>Oracle AI: La Finestra de Cúbic</title>
     
     <!-- LLIBS DE CÀRREGA GLOBAL -->
-    <!-- 1. THREE.js (No és un mòdul, càrrega normal) -->
+    <!-- 1. THREE.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     
-    <!-- 2. MEDIAPIPE (És un mòdul, necessita type="module") -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision.js" type="module"></script>
+    <!-- 2. MEDIAPIPE: Carreguem el bundle de tasques SENSE "type=module" per a la compatibilitat màxima en entorns restringits. -->
+    <!-- Aquest bundle defineix la variable global 'mediapipeTasksVision' que necessitem. -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/tasks-vision.js"></script>
     
     <style>
         /* La font VT323 és crucial per l'estètica cyberpunk */
@@ -152,7 +153,7 @@
         // =================================================================
 
         let video, canvas, ctx, scene, camera, renderer;
-        let cubeGroup; // **NOM DE VARIABLE UNIFICAT**
+        let cubeGroup; // Grup 3D per als cubs
         let cubeCount = 20;
         let lastTimestamp = 0;
         let fps = 0;
@@ -161,7 +162,7 @@
         let recognizer;
         let isCubesVisible = true;
         let isWebcamVisible = true;
-
+        
         // Configuració 3D
         const cameraZ = 25;
 
@@ -186,10 +187,6 @@
          * Inicialitza l'escena 3D de Three.js.
          */
         function initThree() {
-            if (typeof THREE === 'undefined') {
-                return;
-            }
-            
             // Escena
             scene = new THREE.Scene();
             scene.background = new THREE.Color(BACKGROUND_COLOR);
@@ -269,17 +266,22 @@
         // --- INICIALITZACIÓ DE LA IA (MEDIAPIPE) ---
 
         /**
-         * Inicialitza l'eina de reconeixement de gestos.
+         * Inicialitza l'eina de reconeixement de gestos utilitzant la variable global mediapipeTasksVision.
          */
         async function initAI() {
+            // Comprovem si la variable global del bundle de MediaPipe existeix
             if (typeof mediapipeTasksVision === 'undefined') {
                 document.getElementById('status-message').textContent = "ERROR: Nucli IA no disponible (MediaPipe no carregat).";
+                document.getElementById('camera-message').textContent = "Comprova la consola per a errors de càrrega de 'tasks-vision.js'.";
+                document.querySelector('.spinner').style.display = 'none';
+                console.error("CONSOLE_ERROR: Error càmera/IA: mediapipeTasksVision no està definida. S'ha interromput la inicialització IA.");
                 return;
             }
 
             try {
                 displayOutput("Carregant models de visió...");
 
+                // Desestructuració des de la variable global
                 const { FilesetResolver, GestureRecognizer } = mediapipeTasksVision;
 
                 // 1. Inicialitza FilesetResolver per trobar els fitxers de tasques
@@ -302,9 +304,10 @@
                 initCamera();
 
             } catch (error) {
-                console.error("Error càmera/IA: No es pot inicialitzar l'AI/MediaPipe. Detall:", error);
+                console.error("CONSOLE_ERROR: Error càmera/IA: No es pot inicialitzar l'AI/MediaPipe. Detall:", error);
                 document.getElementById('status-message').textContent = "ERROR: No es pot inicialitzar el nucli IA.";
                 document.getElementById('camera-message').textContent = "Consulta la consola per a més detalls.";
+                document.querySelector('.spinner').style.display = 'none';
             }
         }
 
@@ -318,7 +321,7 @@
             if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
                 navigator.mediaDevices.getUserMedia({ video: true })
                     .then((stream) => {
-                        // Oculta la pantalla de càrrega
+                        // Oculta la pantalla de càrrega i mostra l'aplicació
                         document.getElementById('loading-overlay').style.display = 'none';
 
                         // Crea l'element de vídeo
@@ -344,13 +347,16 @@
                         };
                     })
                     .catch((err) => {
-                        console.error("Error en l'accés a la càmera. Això passa si l'entorn no és segur (no és HTTPS) o el permís ha estat denegat.", err);
+                        console.error("CONSOLE_ERROR: Error en l'accés a la càmera. Això passa si l'entorn no és segur (no és HTTPS) o el permís ha estat denegat.", err);
                         document.getElementById('status-message').textContent = "ERROR D'ACCÉS A LA CÀMERA.";
-                        document.getElementById('camera-message').textContent = "Assegureu-vos que utilitzeu HTTPS i que no heu denegat el permís.";
+                        document.getElementById('camera-message').textContent = "Assegureu-vos que utilitzeu HTTPS i que no heu denegat el permís. No es pot iniciar l'aplicació.";
+                        // Amaga la roda de càrrega si falla
+                        document.querySelector('.spinner').style.display = 'none';
                     });
             } else {
-                console.error("getUserMedia no és compatible amb aquest navegador.");
+                console.error("CONSOLE_ERROR: getUserMedia no és compatible amb aquest navegador.");
                 document.getElementById('status-message').textContent = "ERROR: Navegador no compatible amb la càmera.";
+                document.querySelector('.spinner').style.display = 'none';
             }
         }
 
@@ -360,6 +366,7 @@
         function recognizeGestures() {
             if (recognizer && video && video.readyState === 4) {
                 const startTimeMs = performance.now();
+                // Utilitzem l'últim temps per optimitzar el processament
                 const results = recognizer.recognizeForVideo(video, lastDetectionTime);
                 const endTimeMs = performance.now();
 
@@ -411,8 +418,10 @@
                 document.getElementById('latency-value').textContent = recognitionLatency;
             }
 
-            // 2. Lògica de Reconeixement
-            recognizeGestures();
+            // 2. Lògica de Reconeixement (Només si el reconeixedor està inicialitzat)
+            if (recognizer) {
+                recognizeGestures();
+            }
 
             // 3. Animació 3D
             if (isCubesVisible && cubeGroup && renderer && scene && camera) {
@@ -427,19 +436,16 @@
             }
         }
 
-        // --- DEPENDÈNCIES I POLLING (LA SOLUCIÓ AL PROBLEMA DE SINCRONITZACIÓ) ---
+        // --- DEPENDÈNCIES I POLLING ---
 
         /**
-         * Comprova si les llibreries globals s'han carregat. Si és així, inicialitza l'app.
+         * Comprova si les llibreries globals s'han carregat.
          */
         function checkDependencies() {
             const statusEl = document.getElementById('status-message');
 
-            // La comprovació per THREE.js és simple (variable global)
             const isThreeLoaded = typeof THREE !== 'undefined';
-            
-            // La comprovació per MediaPipe és més complexa si utilitzem mòduls,
-            // però la variable global 'mediapipeTasksVision' hauria d'estar disponible.
+            // Comprovem si la variable global de MediaPipe (proporcionada pel bundle) existeix
             const isMediaPipeLoaded = typeof mediapipeTasksVision !== 'undefined';
 
 
@@ -490,10 +496,6 @@
         // --- INICI DE L'APLICACIÓ ---
 
         window.onload = function () {
-            // Assegura que la font es carrega
-            document.getElementById('status-message').style.fontFamily = 'VT323, monospace';
-            document.getElementById('camera-message').style.fontFamily = 'VT323, monospace';
-
             // Comença el procés de comprovació de dependències (Polling)
             checkDependencies();
         }
