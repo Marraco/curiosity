@@ -6,9 +6,11 @@
     <title>Oracle AI: La Finestra de Cúbic</title>
     
     <!-- LLIBS DE CÀRREGA GLOBAL -->
-    <!-- Important: Aquests s'han de carregar abans del nostre script -->
+    <!-- 1. THREE.js (No és un mòdul, càrrega normal) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision.js"></script>
+    
+    <!-- 2. MEDIAPIPE (És un mòdul, necessita type="module") -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision.js" type="module"></script>
     
     <style>
         /* La font VT323 és crucial per l'estètica cyberpunk */
@@ -184,7 +186,6 @@
          * Inicialitza l'escena 3D de Three.js.
          */
         function initThree() {
-            // Aquesta comprovació ja s'ha fet a checkDependencies, però es manté per robustesa.
             if (typeof THREE === 'undefined') {
                 return;
             }
@@ -271,7 +272,6 @@
          * Inicialitza l'eina de reconeixement de gestos.
          */
         async function initAI() {
-             // Aquesta comprovació ja s'ha fet a checkDependencies.
             if (typeof mediapipeTasksVision === 'undefined') {
                 document.getElementById('status-message').textContent = "ERROR: Nucli IA no disponible (MediaPipe no carregat).";
                 return;
@@ -280,7 +280,6 @@
             try {
                 displayOutput("Carregant models de visió...");
 
-                // Desestructuració assegurada ja que mediapipeTasksVision està definit.
                 const { FilesetResolver, GestureRecognizer } = mediapipeTasksVision;
 
                 // 1. Inicialitza FilesetResolver per trobar els fitxers de tasques
@@ -315,6 +314,7 @@
          * Sol·licita l'accés a la càmera i inicia la transmissió.
          */
         function initCamera() {
+            // Aquesta part és la que requereix un context segur (HTTPS) i permís explícit.
             if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
                 navigator.mediaDevices.getUserMedia({ video: true })
                     .then((stream) => {
@@ -344,9 +344,9 @@
                         };
                     })
                     .catch((err) => {
-                        console.error("Error en l'accés a la càmera: ", err);
-                        document.getElementById('status-message').textContent = "ERROR: Accés a la càmera denegat o no disponible.";
-                        document.getElementById('camera-message').textContent = "La interfície només funciona amb permís de càmera.";
+                        console.error("Error en l'accés a la càmera. Això passa si l'entorn no és segur (no és HTTPS) o el permís ha estat denegat.", err);
+                        document.getElementById('status-message').textContent = "ERROR D'ACCÉS A LA CÀMERA.";
+                        document.getElementById('camera-message').textContent = "Assegureu-vos que utilitzeu HTTPS i que no heu denegat el permís.";
                     });
             } else {
                 console.error("getUserMedia no és compatible amb aquest navegador.");
@@ -380,7 +380,8 @@
                         const y = -(handLandmark.y - 0.5) * 2 * 12; // Y invertida
                         const z = handLandmark.z * -10; // Utilitzem Z per profunditat (aprox. -10 a 0)
 
-                        cubeGroup.position.set(x, y, z);
+                        // Moure el grup de cubs basant-se en la posició de la mà
+                        cubeGroup.position.lerp(new THREE.Vector3(x, y, z), 0.1);
                     }
                 } else {
                     displayOutput("Esperant input. Mou la mà per iniciar la detecció.");
@@ -434,21 +435,32 @@
         function checkDependencies() {
             const statusEl = document.getElementById('status-message');
 
-            if (typeof THREE !== 'undefined' && typeof mediapipeTasksVision !== 'undefined') {
+            // La comprovació per THREE.js és simple (variable global)
+            const isThreeLoaded = typeof THREE !== 'undefined';
+            
+            // La comprovació per MediaPipe és més complexa si utilitzem mòduls,
+            // però la variable global 'mediapipeTasksVision' hauria d'estar disponible.
+            const isMediaPipeLoaded = typeof mediapipeTasksVision !== 'undefined';
+
+
+            if (isThreeLoaded && isMediaPipeLoaded) {
                 statusEl.textContent = "DEPENDÈNCIES CARREGADES. Iniciant el sistema...";
                 
-                // Ara que estan definides, podem cridar les funcions d'inicialització.
+                // Inici de l'aplicació
                 initThree();
                 initAI();
 
             } else {
-                // Si una o ambdues no s'han carregat, intentem-ho de nou en 100ms.
                 let missing = [];
-                if (typeof THREE === 'undefined') missing.push("THREE.js");
-                if (typeof mediapipeTasksVision === 'undefined') missing.push("MediaPipe");
+                if (!isThreeLoaded) missing.push("THREE.js");
+                if (!isMediaPipeLoaded) missing.push("MediaPipe");
                 
+                // Actualitza el missatge de càrrega
+                document.getElementById('loading-overlay').style.display = 'flex';
                 statusEl.textContent = `INICIALITZANT NUCLI NEURONAL . . . (Esperant: ${missing.join(', ')})`;
-                setTimeout(checkDependencies, 100);
+                
+                // Intenta-ho de nou en 200ms
+                setTimeout(checkDependencies, 200);
             }
         }
 
