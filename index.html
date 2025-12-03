@@ -19,6 +19,9 @@
             background: #000; color: #00ffcc; display: flex; flex-direction: column;
             justify-content: center; align-items: center; z-index: 100;
             transition: opacity 1s ease;
+            text-align: center; /* Per centrar el missatge d'error si és llarg */
+            padding: 20px;
+            box-sizing: border-box;
         }
         .spinner {
             width: 50px; height: 50px; border: 3px solid rgba(0, 255, 204, 0.3);
@@ -63,23 +66,23 @@
 
     <!-- LLIBRERIES THREE.JS -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
 
-    <!-- MediaPipe (IA) - CORRECCIÓ CLAU: Necessita type="module" -->
+    <!-- MediaPipe (IA) - Necessita type="module" -->
     <script type="module" src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js"></script>
 
-    <!-- Codi de l'aplicació - CORRECCIÓ CLAU: Necessita type="module" per funcionar amb la llibreria d'IA -->
+    <!-- Codi de l'aplicació - Necessita type="module" -->
     <script type="module">
         /**
-         * L'ORACLE DIGITAL - Versió 2.2 (Correcció de Mòduls JS)
+         * L'ORACLE DIGITAL - Versió 2.3 (Control d'errors de Càmera Millorat)
          */
 
-        // Recuperem l'objecte de MediaPipe. Ara s'adjunta a globalThis gràcies al type="module".
+        // Recuperem l'objecte de MediaPipe.
         const mpVision = globalThis.mediapipeTasksVision || {};
 
 
@@ -108,7 +111,6 @@
 
         // --- 1. SHADERS (Els programes gràfics per a l'efecte matrix/digital) ---
 
-        // Shader per al CUB DE DADES
         const dataCubeVertexShader = `
             varying vec2 vUv;
             varying vec3 vNormal;
@@ -125,20 +127,14 @@
             uniform float iActivity; 
             varying vec2 vUv;
 
-            // Funció de soroll aleatori
             float random(vec2 st) {
                 return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
             }
 
             void main() {
-                // Xarxa / Grid
                 float grid = step(0.95, fract(vUv.x * 20.0)) + step(0.95, fract(vUv.y * 20.0));
-                
-                // Flux de dades (codi caient)
                 float speed = iActivity * 2.0; 
                 float flow = step(0.5, random(floor(vUv * vec2(20.0, 50.0) + vec2(0.0, iTime * speed))));
-                
-                // Transparència al centre per veure l'ull
                 float distFromCenter = distance(vUv, vec2(0.5));
                 float mask = smoothstep(0.2, 0.35, distFromCenter);
 
@@ -158,71 +154,54 @@
 
         function initThree() {
             const container = document.getElementById('canvas-container');
-
-            // Escena
             scene = new THREE.Scene();
             scene.fog = new THREE.FogExp2(0x000000, 0.02);
-
-            // Càmera
             camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
             camera.position.set(0, 0, 8);
-
-            // Renderitzador
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.toneMapping = THREE.ReinhardToneMapping;
             container.appendChild(renderer.domElement);
 
-            // POST-PROCESSING (Bloom/Resplendor)
             const renderScene = new THREE.RenderPass(scene, camera);
             const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
             bloomPass.threshold = 0;
-            bloomPass.strength = 1.2; // Intensitat del brillo
+            bloomPass.strength = 1.2;
             bloomPass.radius = 0.5;
 
             composer = new THREE.EffectComposer(renderer);
             composer.addPass(renderScene);
             composer.addPass(bloomPass);
 
-            // --- CONSTRUCCIÓ DELS OBJECTES ---
-
-            // A. L'ULL (Complexitat geomètrica procedural)
+            // A. L'ULL
             eyeGroup = new THREE.Group();
-
-            // 1. Escleròtica (Part blanca)
             const scleraGeo = new THREE.SphereGeometry(1, 32, 32);
             const scleraMat = new THREE.MeshPhongMaterial({ color: 0xeeeeee, shininess: 100 });
-            const sclera = new THREE.Mesh(scleraGeo, scleraMat);
-            eyeGroup.add(sclera);
+            eyeGroup.add(new THREE.Mesh(scleraGeo, scleraMat));
 
-            // 2. Iris
             const irisGeo = new THREE.CircleGeometry(0.55, 32);
-            const irisMat = new THREE.MeshBasicMaterial({ color: CONFIG.colors.idle }); // Color base
-            irisMesh = new THREE.Mesh(irisGeo, irisMat); // Assignació a irisMesh
+            const irisMat = new THREE.MeshBasicMaterial({ color: CONFIG.colors.idle });
+            irisMesh = new THREE.Mesh(irisGeo, irisMat);
             irisMesh.position.z = 0.95;
             eyeGroup.add(irisMesh);
 
-            // 3. Pupil·la
             const pupilGeo = new THREE.CircleGeometry(0.25, 32);
             const pupilMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
             pupilMesh = new THREE.Mesh(pupilGeo, pupilMat);
             pupilMesh.position.z = 0.96;
             eyeGroup.add(pupilMesh);
 
-            // 4. Parpelles (Esferes tallades)
             const eyelidMat = new THREE.MeshPhongMaterial({ color: 0x111111, shininess: 50, side: THREE.DoubleSide });
             
-            // Parpella Superior
             const topGeo = new THREE.SphereGeometry(1.02, 32, 16, 0, Math.PI * 2, 0, Math.PI/2);
             eyelidTop = new THREE.Mesh(topGeo, eyelidMat);
-            eyelidTop.rotation.x = -Math.PI / 4; // Oberta
+            eyelidTop.rotation.x = -Math.PI / 4;
             eyeGroup.add(eyelidTop);
 
-            // Parpella Inferior
             const botGeo = new THREE.SphereGeometry(1.02, 32, 16, 0, Math.PI * 2, Math.PI/2, Math.PI/2);
             eyelidBottom = new THREE.Mesh(botGeo, eyelidMat);
-            eyelidBottom.rotation.x = Math.PI / 4; // Oberta
+            eyelidBottom.rotation.x = Math.PI / 4;
             eyeGroup.add(eyelidBottom);
 
             scene.add(eyeGroup);
@@ -240,11 +219,11 @@
                 vertexShader: dataCubeVertexShader,
                 fragmentShader: dataCubeFragmentShader,
                 transparent: true,
-                side: THREE.BackSide, // Renderitzem l'interior per veure l'ull a través
+                side: THREE.BackSide,
                 depthWrite: false,
                 blending: THREE.AdditiveBlending
             });
-            // Fem dues capes del cub per donar volum
+            
             cubeMesh = new THREE.Mesh(cubeGeo, cubeMat);
             const cubeOuter = new THREE.Mesh(cubeGeo, cubeMat.clone());
             cubeOuter.material.side = THREE.FrontSide;
@@ -253,7 +232,7 @@
             cubeGroup.add(cubeMesh);
             cubeGroup.add(cubeOuter);
             scene.add(cubeGroup);
-            this.cubeGroup = cubeGroup; // Ref
+            this.cubeGroup = cubeGroup;
 
             // C. LA PLACA BASE (Terra)
             const planeGeo = new THREE.PlaneGeometry(20, 20, 20, 20);
@@ -275,7 +254,6 @@
             pointLight.position.set(5, 5, 5);
             scene.add(pointLight);
 
-            // Listeners
             window.addEventListener('resize', onWindowResize, false);
         }
 
@@ -292,9 +270,9 @@
         let video;
 
         async function initAI() {
-            // Comprovem si els mòduls de MediaPipe s'han carregat correctament
+            // Comprovació que MediaPipe s'ha carregat bé.
             if (!mpVision || !mpVision.FaceLandmarker) {
-                document.getElementById('loader-status').innerHTML = "ERROR: Mòduls d'IA no carregats. Recarregueu la pàgina i comproveu la consola.";
+                document.getElementById('loader-status').innerHTML = "ERROR CRÍTIC: Mòduls d'IA no carregats. Recarregueu la pàgina.";
                 return;
             }
 
@@ -304,12 +282,10 @@
             loaderStatus.innerText = "Carregant mòduls d'Intel·ligència Artificial...";
 
             try {
-                // Utilitzem mpVision.FilesetResolver (CORREGIT)
                 const vision = await mpVision.FilesetResolver.forVisionTasks(
                     "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
                 );
 
-                // Utilitzem mpVision.FaceLandmarker i mpVision.RunningMode (CORREGIT)
                 visionModel = await mpVision.FaceLandmarker.createFromOptions(vision, {
                     baseOptions: {
                         modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
@@ -322,28 +298,62 @@
 
                 loaderStatus.innerText = "Sol·licitant accés a la càmera...";
                 
-                // Inicialització de la càmera
-                await navigator.mediaDevices.getUserMedia({ video: true }).then((stream) => {
-                    video.srcObject = stream;
-                    video.addEventListener('loadeddata', () => {
-                        video.play();
-                        // Un cop la càmera carrega, iniciem el bucle de predicció
-                        loaderStatus.innerText = "Sistema Operatiu. Mirant...";
-                        document.getElementById('loader').style.opacity = '0';
-                        setTimeout(() => document.getElementById('loader').style.display = 'none', 1000);
-                        predictWebcam();
+                // INICIALITZACIÓ DE LA CÀMERA AMB CONTROL D'ERRORS MILLORAT (v2.3)
+                await navigator.mediaDevices.getUserMedia({ video: true })
+                    .then((stream) => {
+                        video.srcObject = stream;
+                        
+                        const startWebcam = () => {
+                            video.play();
+                            loaderStatus.innerText = "Sistema Operatiu. Mirant...";
+                            document.getElementById('loader').style.opacity = '0';
+                            setTimeout(() => document.getElementById('loader').style.display = 'none', 1000);
+                            predictWebcam();
+                        };
+
+                        // Afegim el listener per assegurar que el vídeo estigui llest
+                        video.addEventListener('loadeddata', startWebcam);
+
+                        // Fallback: Si la càmera carrega però l'event 'loadeddata' no es dispara ràpidament (problema en certs dispositius)
+                        setTimeout(() => {
+                           if (video.srcObject && video.readyState >= 2 && loaderStatus.innerText === "Sol·licitant accés a la càmera...") {
+                                console.warn("Forçant l'inici de la càmera, loadeddata no s'ha disparat.");
+                                startWebcam();
+                                video.removeEventListener('loadeddata', startWebcam); // Evitem doble inici
+                           }
+                        }, 4000); // Temps màxim d'espera de 4 segons
+
+                    })
+                    .catch((err) => {
+                        console.error("Error al sol·licitar la càmera:", err);
+                        
+                        let message = "ERROR: Permís de càmera denegat o no disponible.";
+                        let color = '#ff0033';
+                        
+                        if (err.name === 'NotAllowedError') {
+                            message = "ERROR: Permís denegat. Has de donar accés a la càmera al navegador.";
+                        } else if (err.name === 'NotReadableError') {
+                            message = "ERROR: La càmera està ocupada. Tanca altres aplicacions que la facin servir.";
+                        } else if (err.name === 'SecurityError') {
+                            message = "ERROR: Es requereix una connexió segura (HTTPS).";
+                        }
+                        
+                        loaderStatus.innerHTML = message + 
+                            `<br><span style="font-size: 0.8em; opacity: 0.7;">
+                            Codi d'error: ${err.name || 'Desconegut'}. Verifica la configuració de permisos del teu navegador i recarrega la pàgina.
+                            </span>`;
+                        
+                        // Canviem l'estil per mostrar que és un error greu
+                        document.getElementById('loader').style.backgroundColor = '#100';
+                        document.getElementById('loader').style.color = color;
+                        document.querySelector('.spinner').style.borderTop = '3px solid #ff0033';
                     });
-                });
                 
             } catch (err) {
-                console.error("Error Càmera/IA:", err);
-                // Missatge d'error de càmera (si falla després de la càrrega del codi)
+                console.error("Error de càrrega d'IA:", err);
                 loaderStatus.innerHTML = `
-                    ERROR CRÍTIC: No es pot accedir a la càmera.<br>
-                    Codi d'error: ${err.name || 'Desconegut'}.<br>
-                    <span style="font-size: 0.8em; opacity: 0.7;">
-                    Ara el problema és de permís/seguretat del dispositiu, no del codi base.
-                    </span>
+                    ERROR CRÍTIC AL NUCLI NEURONAL.<br>
+                    Codi d'error: ${err.name || 'Desconegut'}.
                 `;
             }
         }
@@ -363,35 +373,29 @@
             requestAnimationFrame(predictWebcam);
         }
 
-        // Processament de lògica IA -> 3D
         function processFaceData(result) {
-            // 1. Detecció de parpelleig (Blendshapes)
             const blendshapes = result.faceBlendshapes[0].categories;
             const blinkLeft = blendshapes.find(s => s.categoryName === 'eyeBlinkLeft')?.score || 0;
             const blinkRight = blendshapes.find(s => s.categoryName === 'eyeBlinkRight')?.score || 0;
             
             STATE.userBlinking = (blinkLeft > CONFIG.thresholds.blink || blinkRight > CONFIG.thresholds.blink);
 
-            // 2. Posició del cap (per moure l'ull 3D)
             const landmarks = result.faceLandmarks[0];
             const nose = landmarks[1];
             
-            const lookX = (nose.x - 0.5) * -2; // Invertim X mirall
+            const lookX = (nose.x - 0.5) * -2;
             const lookY = (nose.y - 0.5) * -2;
 
-            // Actualitzem objectiu de l'ull
             targetLook.set(lookX * 3, lookY * 3);
 
-            // 3. Detecció de Proximitat (POR)
-            // Distància aproximada basada en la separació dels ulls
             const leftEye = landmarks[33];
             const rightEye = landmarks[263];
             const faceWidth = Math.sqrt(Math.pow(leftEye.x - rightEye.x, 2));
 
-            if (faceWidth > 0.25) { // Molt a prop (cara molt gran a la pantalla)
+            if (faceWidth > 0.25) {
                 STATE.mode = 'SCARED';
             } else if (STATE.userBlinking) {
-                STATE.mode = 'INTERESTED'; // Respon a la comunicació
+                STATE.mode = 'INTERESTED';
             } else {
                 STATE.mode = 'IDLE';
             }
@@ -402,7 +406,7 @@
         const clock = new THREE.Clock();
         const targetLook = new THREE.Vector2(0, 0);
         const currentLook = new THREE.Vector2(0, 0);
-        let blinkValue = 0; // 0 obert, 1 tancat
+        let blinkValue = 0;
 
         function animate() {
             requestAnimationFrame(animate);
@@ -410,47 +414,35 @@
             const dt = clock.getDelta();
             const time = clock.getElapsedTime();
 
-            // Actualització Shaders
             if (uniformsCube) {
                 uniformsCube.iTime.value = time;
                 
-                // Reacció de Color i Intensitat segons estat
                 let targetColor = new THREE.Color(CONFIG.colors.idle);
                 let activity = 1.0;
 
                 if (STATE.mode === 'SCARED') {
                     targetColor.setHex(CONFIG.colors.scared);
-                    activity = 5.0; // Caos
-                    // Vibració del cub (Por)
+                    activity = 5.0;
                     this.cubeGroup.position.x = (Math.random() - 0.5) * 0.1;
                     this.cubeGroup.position.y = (Math.random() - 0.5) * 0.1;
-                    
-                    // Pupil·la es contrau
                     pupilMesh.scale.lerp(new THREE.Vector3(0.5, 0.5, 1), 0.1);
 
                 } else if (STATE.mode === 'INTERESTED') {
                     targetColor.setHex(CONFIG.colors.interested);
                     activity = 2.0;
                     this.cubeGroup.position.set(0,0,0);
-                    // Pupil·la es dilata
                     pupilMesh.scale.lerp(new THREE.Vector3(1.3, 1.3, 1), 0.1);
                 } else {
-                    // IDLE
                     this.cubeGroup.position.set(0,0,0);
-                    // Moviment suau "respiració"
                     this.cubeGroup.rotation.y = Math.sin(time * 0.2) * 0.1;
                     pupilMesh.scale.lerp(new THREE.Vector3(1, 1, 1), 0.1);
                 }
 
-                // Interpolació suau del color
                 uniformsCube.iColor.value.lerp(targetColor, 0.05);
-                // Canvi de color de l'Iris
                 irisMesh.material.color.lerp(targetColor, 0.05);
                 uniformsCube.iActivity.value = THREE.MathUtils.lerp(uniformsCube.iActivity.value, activity, 0.05);
             }
 
-            // MOVIMENT DE L'ULL
-            // Si no detecta cara, mira al voltant aleatòriament (Noise)
             if (!STATE.faceDetected) {
                 const noiseX = Math.sin(time * 0.5) + Math.cos(time * 1.2);
                 const noiseY = Math.cos(time * 0.7);
@@ -458,27 +450,20 @@
                 STATE.mode = 'IDLE';
             }
 
-            // Interpolació del moviment de l'ull (perquè sigui orgànic)
             currentLook.lerp(targetLook, 0.1);
             eyeGroup.lookAt(currentLook.x, currentLook.y, 5);
 
-            // PARPELLEIG
             let targetBlink = STATE.userBlinking ? 1 : 0;
             
-            // Parpelleig automàtic aleatori si està Idle
             if (!STATE.userBlinking && Math.random() < 0.005) {
                 targetBlink = 1;
             }
 
-            blinkValue += (targetBlink - blinkValue) * 0.2; // Suavitzat
+            blinkValue += (targetBlink - blinkValue) * 0.2;
 
-            // Aplicar parpelleig a les parpelles
-            // Superior: de -PI/4 (obert) a 0 (tancat)
             eyelidTop.rotation.x = THREE.MathUtils.mapLinear(blinkValue, 0, 1, -Math.PI/4, 0);
-            // Inferior: de PI/4 (obert) a 0 (tancat)
             eyelidBottom.rotation.x = THREE.MathUtils.mapLinear(blinkValue, 0, 1, Math.PI/4, 0);
 
-            // Render
             composer.render();
         }
 
