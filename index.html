@@ -45,7 +45,7 @@
     <!-- UI: Loader -->
     <div id="loader">
         <div class="spinner"></div>
-        <p>INICIALITZANT NUCLI NEURONAL...</p>
+        <p id="loader-status">INICIALITZANT NUCLI NEURONAL...</p>
         <p style="font-size: 0.8em; opacity: 0.7;">Si us plau, permet l'accés a la càmera</p>
     </div>
 
@@ -61,10 +61,8 @@
     <video id="input-video" playsinline></video>
     <div id="canvas-container"></div>
 
-    <!-- LLIBRERIES -->
-    <!-- Three.js -->
+    <!-- LLIBRERIES THREE.JS -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <!-- Post-processing (Bloom) -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
@@ -72,15 +70,18 @@
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
 
-    <!-- MediaPipe (IA) -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js"></script>
+    <!-- MediaPipe (IA) - CORRECCIÓ CLAU: Necessita type="module" -->
+    <script type="module" src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js"></script>
 
-    <script>
+    <!-- Codi de l'aplicació - CORRECCIÓ CLAU: Necessita type="module" per funcionar amb la llibreria d'IA -->
+    <script type="module">
         /**
-         * L'ORACLE DIGITAL
-         * ----------------
-         * Sistema interactiu que combina Three.js i MediaPipe.
+         * L'ORACLE DIGITAL - Versió 2.2 (Correcció de Mòduls JS)
          */
+
+        // Recuperem l'objecte de MediaPipe. Ara s'adjunta a globalThis gràcies al type="module".
+        const mpVision = globalThis.mediapipeTasksVision || {};
+
 
         // --- CONFIGURACIÓ GLOBAL ---
         const CONFIG = {
@@ -153,6 +154,7 @@
         let scene, camera, renderer, composer;
         let eyeGroup, pupilMesh, eyelidTop, eyelidBottom, cubeMesh, basePlane;
         let uniformsCube;
+        let irisMesh;
 
         function initThree() {
             const container = document.getElementById('canvas-container');
@@ -197,10 +199,9 @@
             // 2. Iris
             const irisGeo = new THREE.CircleGeometry(0.55, 32);
             const irisMat = new THREE.MeshBasicMaterial({ color: CONFIG.colors.idle }); // Color base
-            const iris = new THREE.Mesh(irisGeo, irisMat);
-            iris.position.z = 0.95;
-            eyeGroup.add(iris);
-            this.irisMesh = iris; // Guardar referència
+            irisMesh = new THREE.Mesh(irisGeo, irisMat); // Assignació a irisMesh
+            irisMesh.position.z = 0.95;
+            eyeGroup.add(irisMesh);
 
             // 3. Pupil·la
             const pupilGeo = new THREE.CircleGeometry(0.25, 32);
@@ -288,56 +289,69 @@
         // --- 3. INTEL·LIGÈNCIA ARTIFICIAL (MediaPipe) ---
         
         let visionModel;
-        let lastVideoTime = -1;
         let video;
 
         async function initAI() {
+            // Comprovem si els mòduls de MediaPipe s'han carregat correctament
+            if (!mpVision || !mpVision.FaceLandmarker) {
+                document.getElementById('loader-status').innerHTML = "ERROR: Mòduls d'IA no carregats. Recarregueu la pàgina i comproveu la consola.";
+                return;
+            }
+
             video = document.getElementById('input-video');
-            
-            // Demanar càmera
+            const loaderStatus = document.getElementById('loader-status');
+
+            loaderStatus.innerText = "Carregant mòduls d'Intel·ligència Artificial...";
+
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                video.srcObject = stream;
-                video.play();
-                
-                // Carregar model (FaceLandmarker per parpelleig, HandLandmarker per gestos)
-                // Usarem FaceLandmarker perquè és més lleuger per als ulls, i heurística per a mans si calgués, 
-                // però per simplicitat en un sol fitxer usarem el FaceLandmarker que inclou detecció bàsica.
-                // PERÒ, el prompt demana "moviment de mans". Carregarem el "Holistic" o dos models?
-                // Per rendiment, farem servir FACE LANDMARKER (per ulls/cap) i suposarem moviment general per activitat.
-                
-                // *Nota tècnica*: Carregar múltiples models en JS pur en un sol arxiu pot ser pesat.
-                // Usarem FaceLandmarker per controlar l'ull. Si el FaceLandmarker detecta la cara molt a prop, s'espantarà.
-                
-                const vision = await mediapipeTasksVision.FilesetResolver.forVisionTasks(
+                // Utilitzem mpVision.FilesetResolver (CORREGIT)
+                const vision = await mpVision.FilesetResolver.forVisionTasks(
                     "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
                 );
 
-                visionModel = await mediapipeTasksVision.FaceLandmarker.createFromOptions(vision, {
+                // Utilitzem mpVision.FaceLandmarker i mpVision.RunningMode (CORREGIT)
+                visionModel = await mpVision.FaceLandmarker.createFromOptions(vision, {
                     baseOptions: {
                         modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
                         delegate: "GPU"
                     },
                     outputFaceBlendshapes: true,
-                    runningMode: "VIDEO",
+                    runningMode: mpVision.RunningMode.VIDEO, 
                     numFaces: 1
                 });
 
-                document.getElementById('loader').style.opacity = '0';
-                setTimeout(() => document.getElementById('loader').style.display = 'none', 1000);
+                loaderStatus.innerText = "Sol·licitant accés a la càmera...";
                 
-                predictWebcam();
-
+                // Inicialització de la càmera
+                await navigator.mediaDevices.getUserMedia({ video: true }).then((stream) => {
+                    video.srcObject = stream;
+                    video.addEventListener('loadeddata', () => {
+                        video.play();
+                        // Un cop la càmera carrega, iniciem el bucle de predicció
+                        loaderStatus.innerText = "Sistema Operatiu. Mirant...";
+                        document.getElementById('loader').style.opacity = '0';
+                        setTimeout(() => document.getElementById('loader').style.display = 'none', 1000);
+                        predictWebcam();
+                    });
+                });
+                
             } catch (err) {
-                console.error("Error càmera/IA:", err);
-                alert("Error: No es pot accedir a la càmera. Assegura't d'usar HTTPS o Localhost.");
+                console.error("Error Càmera/IA:", err);
+                // Missatge d'error de càmera (si falla després de la càrrega del codi)
+                loaderStatus.innerHTML = `
+                    ERROR CRÍTIC: No es pot accedir a la càmera.<br>
+                    Codi d'error: ${err.name || 'Desconegut'}.<br>
+                    <span style="font-size: 0.8em; opacity: 0.7;">
+                    Ara el problema és de permís/seguretat del dispositiu, no del codi base.
+                    </span>
+                `;
             }
         }
 
         async function predictWebcam() {
-            if (visionModel && video.currentTime !== lastVideoTime) {
-                lastVideoTime = video.currentTime;
-                const result = visionModel.detectForVideo(video, performance.now());
+            if (visionModel && video.readyState === video.HAVE_ENOUGH_DATA) {
+                const now = performance.now();
+                const result = visionModel.detectForVideo(video, now);
                 
                 if (result.faceLandmarks && result.faceLandmarks.length > 0) {
                     STATE.faceDetected = true;
@@ -352,37 +366,29 @@
         // Processament de lògica IA -> 3D
         function processFaceData(result) {
             // 1. Detecció de parpelleig (Blendshapes)
-            // eyeBlinkLeft i eyeBlinkRight són índexs específics, normalment 9 i 10 als categories
             const blendshapes = result.faceBlendshapes[0].categories;
-            const blinkLeft = blendshapes.find(s => s.categoryName === 'eyeBlinkLeft').score;
-            const blinkRight = blendshapes.find(s => s.categoryName === 'eyeBlinkRight').score;
+            const blinkLeft = blendshapes.find(s => s.categoryName === 'eyeBlinkLeft')?.score || 0;
+            const blinkRight = blendshapes.find(s => s.categoryName === 'eyeBlinkRight')?.score || 0;
             
             STATE.userBlinking = (blinkLeft > CONFIG.thresholds.blink || blinkRight > CONFIG.thresholds.blink);
 
             // 2. Posició del cap (per moure l'ull 3D)
             const landmarks = result.faceLandmarks[0];
-            // Nas és aprox l'índex 1
             const nose = landmarks[1];
             
-            // Normalitzem coordenades (0-1) a (-1 a 1)
             const lookX = (nose.x - 0.5) * -2; // Invertim X mirall
             const lookY = (nose.y - 0.5) * -2;
-            const distance = nose.z; // Z relatiu
 
             // Actualitzem objectiu de l'ull
             targetLook.set(lookX * 3, lookY * 3);
 
             // 3. Detecció de Proximitat (POR)
-            // El valor Z de mediapipe és relatiu. Si és molt negatiu, està a prop.
-            // També podem usar l'amplada de la cara.
-            // Simulació simple: si la cara ocupa molt, "por".
-            
             // Distància aproximada basada en la separació dels ulls
             const leftEye = landmarks[33];
             const rightEye = landmarks[263];
             const faceWidth = Math.sqrt(Math.pow(leftEye.x - rightEye.x, 2));
 
-            if (faceWidth > 0.25) { // Molt a prop
+            if (faceWidth > 0.25) { // Molt a prop (cara molt gran a la pantalla)
                 STATE.mode = 'SCARED';
             } else if (STATE.userBlinking) {
                 STATE.mode = 'INTERESTED'; // Respon a la comunicació
@@ -438,6 +444,8 @@
 
                 // Interpolació suau del color
                 uniformsCube.iColor.value.lerp(targetColor, 0.05);
+                // Canvi de color de l'Iris
+                irisMesh.material.color.lerp(targetColor, 0.05);
                 uniformsCube.iActivity.value = THREE.MathUtils.lerp(uniformsCube.iActivity.value, activity, 0.05);
             }
 
