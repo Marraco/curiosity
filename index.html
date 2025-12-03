@@ -6,18 +6,10 @@
     <title>Oracle AI: La Finestra de Cúbic</title>
     
     <!-- LLIBS DE CÀRREGA GLOBAL -->
-    <!-- 1. THREE.js -->
+    <!-- 1. THREE.js (Càrrega síncrona) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     
-    <!-- 2. MEDIAPIPE: Carregarem vision.js (el mòdul) i forçarem la creació de la variable global al nostre àmbit. -->
-    <script type="module">
-        // Importem la biblioteca com a mòdul (que funciona millor en entorns restringits)
-        import { FilesetResolver, GestureRecognizer } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision.js";
-
-        // Injectem les classes importades a la variable global que la nostra lògica espera.
-        // Aquesta tècnica bypassa moltes restriccions de CSP (Content Security Policy)
-        window.mediapipeTasksVision = { FilesetResolver, GestureRecognizer };
-    </script>
+    <!-- 2. MEDIAPIPE: Es carregarà dinàmicament a checkDependencies. -->
     
     <style>
         /* La font VT323 és crucial per l'estètica cyberpunk */
@@ -178,7 +170,7 @@
         // =================================================================
 
         // Versió per a depuració: [vAAAAHHMM_HHmmss]
-        const VERSION_STAMP = "v20251203-121400"; 
+        const VERSION_STAMP = "v20251203-122100"; 
         
         let video, canvas, ctx, scene, camera, renderer;
         let cubeGroup; // Grup 3D per als cubs
@@ -191,6 +183,9 @@
         let isCubesVisible = true;
         let isWebcamVisible = true;
         
+        // Nova variable per al mòdul MediaPipe (es carregarà dinàmicament)
+        let mpVision = null; 
+
         // Configuració 3D
         const cameraZ = 25;
 
@@ -294,23 +289,23 @@
         // --- INICIALITZACIÓ DE LA IA (MEDIAPIPE) ---
 
         /**
-         * Inicialitza l'eina de reconeixement de gestos utilitzant la variable global mediapipeTasksVision.
+         * Inicialitza l'eina de reconeixement de gestos utilitzant la variable global mpVision.
          */
         async function initAI() {
-            // Comprovem si la variable global del bundle de MediaPipe existeix
-            if (typeof mediapipeTasksVision === 'undefined') {
-                document.getElementById('status-message').textContent = "ERROR: Nucli IA no disponible (MediaPipe no carregat).";
-                document.getElementById('camera-message').textContent = "Comprova la consola per a errors de mòduls o bloqueig de seguretat.";
+            // Aquesta comprovació ja hauria de passar checkDependencies, però per seguretat.
+            if (!mpVision || typeof mpVision.FilesetResolver === 'undefined') {
+                document.getElementById('status-message').textContent = "ERROR: Nucli IA no disponible (mpVision indefinit).";
+                document.getElementById('camera-message').textContent = "S'ha interromput la inicialització IA.";
                 document.querySelector('.spinner').style.display = 'none';
-                console.error("CONSOLE_ERROR: Error càmera/IA: mediapipeTasksVision no està definida. S'ha interromput la inicialització IA.");
+                console.error("CONSOLE_ERROR: Error càmera/IA: mpVision no conté les classes necessàries. S'ha interromput la inicialització IA.");
                 return;
             }
 
             try {
                 displayOutput("Carregant models de visió...");
 
-                // Desestructuració des de la variable global (injectada pel nostre script bridge)
-                const { FilesetResolver, GestureRecognizer } = mediapipeTasksVision;
+                // Desestructuració des de la variable dinàmica (mpVision)
+                const { FilesetResolver, GestureRecognizer } = mpVision;
 
                 // 1. Inicialitza FilesetResolver per trobar els fitxers de tasques
                 const fileset = await FilesetResolver.forVisionTasks(
@@ -467,34 +462,43 @@
         // --- DEPENDÈNCIES I POLLING ---
 
         /**
-         * Comprova si les llibreries globals s'han carregat.
+         * Comprova si les llibreries globals s'han carregat i inicia la càrrega de MediaPipe.
          */
-        function checkDependencies() {
+        async function checkDependencies() {
             const statusEl = document.getElementById('status-message');
-
             const isThreeLoaded = typeof THREE !== 'undefined';
-            // Comprovem si la variable global de MediaPipe (ara injectada) existeix
-            const isMediaPipeLoaded = typeof mediapipeTasksVision !== 'undefined';
 
+            if (!isThreeLoaded) {
+                 // Gestiona el retard de càrrega de Three.js (hauria de ser ràpid)
+                 statusEl.textContent = `INICIALITZANT NUCLI NEURONAL . . . (Esperant: THREE.js)`;
+                 setTimeout(checkDependencies, 200);
+                 return;
+            }
 
-            if (isThreeLoaded && isMediaPipeLoaded) {
-                statusEl.textContent = "DEPENDÈNCIES CARREGADES. Iniciant el sistema...";
-                
-                // Inici de l'aplicació
-                initThree();
-                initAI();
+            // Si Three.js està carregat, continuem amb MediaPipe.
+            if (!mpVision) {
+                statusEl.textContent = "Carregant mòdul IA . . . (MediaPipe)";
+                try {
+                    // Utilitzem import() dinàmic per assegurar-nos que s'espera la càrrega del mòdul.
+                    const visionModule = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision.js");
+                    mpVision = visionModule; // Guarda totes les exportacions
+                    
+                    statusEl.textContent = "DEPENDÈNCIES CARREGADES. Iniciant el sistema...";
+                    
+                    // Inici de l'aplicació
+                    initThree();
+                    initAI();
 
+                } catch (error) {
+                    console.error("CONSOLE_ERROR: Error de càrrega dinàmica de MediaPipe. Detall:", error);
+                    document.getElementById('status-message').textContent = "ERROR: No es pot carregar el mòdul IA (MediaPipe).";
+                    document.getElementById('camera-message').textContent = "Comprova la consola per a errors de xarxa o de seguretat.";
+                    document.querySelector('.spinner').style.display = 'none';
+                }
             } else {
-                let missing = [];
-                if (!isThreeLoaded) missing.push("THREE.js");
-                if (!isMediaPipeLoaded) missing.push("MediaPipe");
-                
-                // Actualitza el missatge de càrrega
-                document.getElementById('loading-overlay').style.display = 'flex';
-                statusEl.textContent = `INICIALITZANT NUCLI NEURONAL . . . (Esperant: ${missing.join(', ')})`;
-                
-                // Intenta-ho de nou en 200ms
-                setTimeout(checkDependencies, 200);
+                 // Si ja està carregat (en cas de re-execució), inicia l'aplicació
+                 initThree();
+                 initAI();
             }
         }
 
@@ -527,9 +531,9 @@
             // Mostra el segell de versió quan es carrega la finestra
             const stampEl = document.getElementById('version-stamp');
             if (stampEl) {
-                // Format desitjat: V25.12.03 12:14 (YY.MM.DD HH:mm)
-                const datePart = VERSION_STAMP.substring(1, 9); // "20251203"
-                const timePart = VERSION_STAMP.substring(10); // "121400"
+                // Format desitjat: V25.12.03 12:21 (YY.MM.DD HH:mm)
+                const datePart = VERSION_STAMP.substring(1, 9); 
+                const timePart = VERSION_STAMP.substring(10); 
                 
                 // Extreu components de data (YY.MM.DD)
                 const yearPart = datePart.substring(2, 4);
@@ -542,7 +546,7 @@
                 stampEl.textContent = `V${yearPart}.${monthPart}.${dayPart} ${formattedTime}`;
             }
 
-            // Comença el procés de comprovació de dependències (Polling)
+            // Comença el procés de comprovació de dependències (Càrrega dinàmica)
             checkDependencies();
         }
 
