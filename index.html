@@ -9,9 +9,15 @@
     <!-- 1. THREE.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     
-    <!-- 2. MEDIAPIPE: Carreguem el bundle de tasques SENSE "type=module" per a la compatibilitat màxima en entorns restringits. -->
-    <!-- Aquest bundle defineix la variable global 'mediapipeTasksVision' que necessitem. -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/tasks-vision.js"></script>
+    <!-- 2. MEDIAPIPE: Carregarem vision.js (el mòdul) i forçarem la creació de la variable global al nostre àmbit. -->
+    <script type="module">
+        // Importem la biblioteca com a mòdul (que funciona millor en entorns restringits)
+        import { FilesetResolver, GestureRecognizer } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision.js";
+
+        // Injectem les classes importades a la variable global que la nostra lògica espera.
+        // Aquesta tècnica bypassa moltes restriccions de CSP (Content Security Policy)
+        window.mediapipeTasksVision = { FilesetResolver, GestureRecognizer };
+    </script>
     
     <style>
         /* La font VT323 és crucial per l'estètica cyberpunk */
@@ -88,7 +94,24 @@
             border: 1px solid #00ff77;
             padding: 5px;
             font-size: 0.9rem;
+            /* Flexbox per al nou element de versió */
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            /* FIX: Assegura que es vegi sobre l'overlay de càrrega (z-index: 100) */
+            z-index: 101; 
         }
+        
+        /* Estil per al segell de versió (debugging) */
+        #version-stamp {
+            font-size: 0.8rem;
+            color: #00ff77; /* Mateix color que l'oracle */
+            opacity: 0.7; /* Una mica transparent per ser menys invasiu */
+            margin-top: 5px;
+            border-top: 1px dashed rgba(0, 255, 119, 0.3);
+            padding-top: 5px;
+        }
+
 
         /* Styling per als elements d'interacció (Botons) */
         #controls {
@@ -132,6 +155,8 @@
     <div id="stats-panel">
         <div>FPS: <span id="fps-value">N/A</span></div>
         <div>LATÈNCIA: <span id="latency-value">N/A</span> ms</div>
+        <!-- Segell de versió (DEBUG) -->
+        <div id="version-stamp"></div>
     </div>
 
     <!-- Botons de control -->
@@ -152,6 +177,9 @@
         // Variables Globals
         // =================================================================
 
+        // Versió per a depuració: [vAAAAHHMM_HHmmss]
+        const VERSION_STAMP = "v20251203-121400"; 
+        
         let video, canvas, ctx, scene, camera, renderer;
         let cubeGroup; // Grup 3D per als cubs
         let cubeCount = 20;
@@ -272,7 +300,7 @@
             // Comprovem si la variable global del bundle de MediaPipe existeix
             if (typeof mediapipeTasksVision === 'undefined') {
                 document.getElementById('status-message').textContent = "ERROR: Nucli IA no disponible (MediaPipe no carregat).";
-                document.getElementById('camera-message').textContent = "Comprova la consola per a errors de càrrega de 'tasks-vision.js'.";
+                document.getElementById('camera-message').textContent = "Comprova la consola per a errors de mòduls o bloqueig de seguretat.";
                 document.querySelector('.spinner').style.display = 'none';
                 console.error("CONSOLE_ERROR: Error càmera/IA: mediapipeTasksVision no està definida. S'ha interromput la inicialització IA.");
                 return;
@@ -281,7 +309,7 @@
             try {
                 displayOutput("Carregant models de visió...");
 
-                // Desestructuració des de la variable global
+                // Desestructuració des de la variable global (injectada pel nostre script bridge)
                 const { FilesetResolver, GestureRecognizer } = mediapipeTasksVision;
 
                 // 1. Inicialitza FilesetResolver per trobar els fitxers de tasques
@@ -445,7 +473,7 @@
             const statusEl = document.getElementById('status-message');
 
             const isThreeLoaded = typeof THREE !== 'undefined';
-            // Comprovem si la variable global de MediaPipe (proporcionada pel bundle) existeix
+            // Comprovem si la variable global de MediaPipe (ara injectada) existeix
             const isMediaPipeLoaded = typeof mediapipeTasksVision !== 'undefined';
 
 
@@ -496,6 +524,24 @@
         // --- INICI DE L'APLICACIÓ ---
 
         window.onload = function () {
+            // Mostra el segell de versió quan es carrega la finestra
+            const stampEl = document.getElementById('version-stamp');
+            if (stampEl) {
+                // Format desitjat: V25.12.03 12:14 (YY.MM.DD HH:mm)
+                const datePart = VERSION_STAMP.substring(1, 9); // "20251203"
+                const timePart = VERSION_STAMP.substring(10); // "121400"
+                
+                // Extreu components de data (YY.MM.DD)
+                const yearPart = datePart.substring(2, 4);
+                const monthPart = datePart.substring(4, 6);
+                const dayPart = datePart.substring(6, 8);
+                
+                // Extreu components de temps (HH:mm)
+                const formattedTime = `${timePart.substring(0, 2)}:${timePart.substring(2, 4)}`;
+                
+                stampEl.textContent = `V${yearPart}.${monthPart}.${dayPart} ${formattedTime}`;
+            }
+
             // Comença el procés de comprovació de dependències (Polling)
             checkDependencies();
         }
