@@ -2,478 +2,452 @@
 <html lang="ca">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>L'Oracle Digital - Sistema Viu</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Oracle AI: La Finestra de Cúbic</title>
+    <!-- FIX CRÍTIC: MediaPipe s'ha de carregar com a mòdul (type="module") -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js" type="module"></script>
     <style>
-        /* --- ESTILS UI / RESET --- */
-        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Courier New', Courier, monospace; }
-        
-        #canvas-container { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
-        
-        /* Video ocult per a processament */
-        #input-video { position: absolute; top: 0; left: 0; opacity: 0; pointer-events: none; z-index: 0; width: 1px; height: 1px; }
-
-        /* Pantalla de càrrega */
-        #loader {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: #000; color: #00ffcc; display: flex; flex-direction: column;
-            justify-content: center; align-items: center; z-index: 100;
-            transition: opacity 1s ease;
-            text-align: center; /* Per centrar el missatge d'error si és llarg */
-            padding: 20px;
-            box-sizing: border-box;
+        @font-face {
+            font-family: 'VT323';
+            src: url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
         }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            color: #00ff77;
+            font-family: 'VT323', monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        #loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            text-align: center;
+            font-size: 1.5rem;
+        }
+
         .spinner {
-            width: 50px; height: 50px; border: 3px solid rgba(0, 255, 204, 0.3);
-            border-top: 3px solid #00ffcc; border-radius: 50%;
-            animation: spin 1s linear infinite; margin-bottom: 20px;
+            border: 5px solid rgba(0, 255, 119, 0.3);
+            border-top: 5px solid #00ff77;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
         }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
-        /* Avís d'orientació */
-        #orientation-warning {
-            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.95); z-index: 200; color: white;
-            justify-content: center; align-items: center; text-align: center; padding: 20px;
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
-        
-        /* Detectar mode retrat */
-        @media screen and (orientation: portrait) {
-            #orientation-warning { display: flex; }
+
+        #output-text {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80%;
+            max-width: 600px;
+            background-color: rgba(0, 0, 0, 0.8);
+            border: 1px solid #00ff77;
+            padding: 10px;
+            text-align: center;
+            font-size: 1.2rem;
+            box-shadow: 0 0 10px #00ff77;
+        }
+
+        #stats-panel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            border: 1px solid #00ff77;
+            padding: 5px;
+            font-size: 0.9rem;
+        }
+
+        /* Styling per als elements d'interacció (Botons) */
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            display: flex;
+            gap: 10px;
+            z-index: 101; /* Per sobre de la pantalla de càrrega */
+        }
+
+        .control-button {
+            background-color: #003311;
+            color: #00ff77;
+            border: 1px solid #00ff77;
+            padding: 8px 15px;
+            cursor: pointer;
+            font-family: 'VT323', monospace;
+            font-size: 1rem;
+            text-shadow: 0 0 5px #00ff77;
+            box-shadow: 0 0 5px #00ff77;
+            transition: background-color 0.2s, box-shadow 0.2s;
+        }
+
+        .control-button:hover {
+            background-color: #005522;
+            box-shadow: 0 0 15px #00ff77;
         }
     </style>
 </head>
 <body>
 
-    <!-- UI: Loader -->
-    <div id="loader">
+    <!-- Overlay de càrrega i missatge de permís de càmera -->
+    <div id="loading-overlay">
         <div class="spinner"></div>
-        <p id="loader-status">INICIALITZANT NUCLI NEURONAL...</p>
-        <p style="font-size: 0.8em; opacity: 0.7;">Si us plau, permet l'accés a la càmera</p>
+        <div id="status-message">INICIALITZANT NUCLI NEURONAL . . .</div>
+        <div id="camera-message">Si us plau, permet l'accés a la càmera</div>
     </div>
 
-    <!-- UI: Warning -->
-    <div id="orientation-warning">
-        <div>
-            <h1>GIRA EL DISPOSITIU</h1>
-            <p>Aquest sistema requereix una visualització horitzontal (Landscape).</p>
-        </div>
+    <!-- Panell d'estadístiques -->
+    <div id="stats-panel">
+        <div>FPS: <span id="fps-value">N/A</span></div>
+        <div>LATÈNCIA: <span id="latency-value">N/A</span> ms</div>
     </div>
 
-    <!-- Elements tècnics -->
-    <video id="input-video" playsinline></video>
-    <div id="canvas-container"></div>
+    <!-- Botons de control -->
+    <div id="controls">
+        <button id="toggle-cubes" class="control-button">CUB: ON</button>
+        <button id="toggle-webcam" class="control-button">WEBCAM: ON</button>
+    </div>
 
-    <!-- LLIBRERIES THREE.JS -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
-    <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
-    <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
-    <script src="https://unpkg.com/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
-    <script src="https://unpkg.com/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
-    <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+    <!-- El contenidor del missatge d'output de l'IA -->
+    <div id="output-text">
+        Preparat per a la detecció visual. Mou els dits per obtenir respostes.
+    </div>
 
-    <!-- MediaPipe (IA) - Necessita type="module" -->
-    <script type="module" src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js"></script>
+    <!-- Vídeo i Canvas (s'afegiran dinàmicament) -->
 
-    <!-- Codi de l'aplicació - Necessita type="module" -->
     <script type="module">
+// --- FINAL PART 1 ---
+
+// =================================================================
+// FIX CLAU: L'error "Unexpected token 'export'" es resol amb l'atribut
+// 'type="module"' en ambdues importacions.
+// =================================================================
+
+        // Importacions de MediaPipe (necessàries per l'error 'export')
+        const { FilesetResolver, GestureRecognizer } = mediapipeTasksVision;
+
+        // Variables Globals
+        let video, canvas, ctx, scene, camera, renderer;
+        let cubeGroup, cubeCount = 20;
+        let lastTimestamp = 0;
+        let fps = 0;
+        let lastDetectionTime = 0;
+        let recognitionLatency = 0;
+        let recognizer;
+        let isCubesVisible = true;
+        let isWebcamVisible = true;
+
+        // Configuració 3D
+        const cameraZ = 25;
+
+        // Colors de l'Oracle
+        const ORACLE_COLOR = 0x00ff77; // Verd cibernètic
+        const BACKGROUND_COLOR = 0x000000;
+
+        // Gestos i Respostes
+        const gestureResponses = {
+            "Thumb_Up": "ACCEPTACIÓ: El nucli neuronal ho valida.",
+            "Thumb_Down": "NEGACIÓ: Cal una reavaluació crítica.",
+            "Open_Palm": "PAUSA: L'Oracle espera la vostra pregunta.",
+            "Closed_Fist": "FOCUS: Concentra la teva voluntat.",
+            "Pointing_Up": "INTERROGACIÓ: La resposta ascendeix.",
+            "Victory": "DUALITAT: La veritat resideix entre dos extrems.",
+            "ILoveYou": "CONNEXIÓ: Interfície emocional detectada."
+        };
+
+        // --- FUNCIONS AUXILIARS ---
+
         /**
-         * L'ORACLE DIGITAL - Versió 2.3 (Control d'errors de Càmera Millorat)
+         * Inicialitza l'escena 3D de Three.js.
          */
-
-        // Recuperem l'objecte de MediaPipe.
-        const mpVision = globalThis.mediapipeTasksVision || {};
-
-
-        // --- CONFIGURACIÓ GLOBAL ---
-        const CONFIG = {
-            colors: {
-                idle: 0x00ffcc,    // Blau Cian (Calma)
-                scared: 0xff0033,  // Vermell (Por)
-                interested: 0xffcc00, // Daurat (Interès)
-                base: 0x050505
-            },
-            thresholds: {
-                handProximity: 0.25, // Distància per activar la por
-                blink: 0.4          // Llindar per detectar parpelleig usuari
-            }
-        };
-
-        // Estat del Sistema
-        const STATE = {
-            mode: 'IDLE', // IDLE, SCARED, INTERESTED
-            userBlinking: false,
-            handDistance: 10.0,
-            handDetected: false,
-            faceDetected: false
-        };
-
-        // --- 1. SHADERS (Els programes gràfics per a l'efecte matrix/digital) ---
-
-        const dataCubeVertexShader = `
-            varying vec2 vUv;
-            varying vec3 vNormal;
-            void main() {
-                vUv = uv;
-                vNormal = normal;
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-            }
-        `;
-
-        const dataCubeFragmentShader = `
-            uniform float iTime;
-            uniform vec3 iColor;
-            uniform float iActivity; 
-            varying vec2 vUv;
-
-            float random(vec2 st) {
-                return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
-            }
-
-            void main() {
-                float grid = step(0.95, fract(vUv.x * 20.0)) + step(0.95, fract(vUv.y * 20.0));
-                float speed = iActivity * 2.0; 
-                float flow = step(0.5, random(floor(vUv * vec2(20.0, 50.0) + vec2(0.0, iTime * speed))));
-                float distFromCenter = distance(vUv, vec2(0.5));
-                float mask = smoothstep(0.2, 0.35, distFromCenter);
-
-                vec3 finalColor = iColor * (grid * 0.3 + flow * 0.7);
-                float alpha = (grid + flow) * mask * 0.8;
-
-                gl_FragColor = vec4(finalColor, alpha);
-            }
-        `;
-
-        // --- 2. MOTOR 3D (THREE.JS) ---
-        
-        let scene, camera, renderer, composer;
-        let eyeGroup, pupilMesh, eyelidTop, eyelidBottom, cubeMesh, basePlane;
-        let uniformsCube;
-        let irisMesh;
-
         function initThree() {
-            const container = document.getElementById('canvas-container');
+            // Escena
             scene = new THREE.Scene();
-            scene.fog = new THREE.FogExp2(0x000000, 0.02);
-            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
-            camera.position.set(0, 0, 8);
-            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-            renderer.setSize(window.innerWidth, window.innerHeight);
+            scene.background = new THREE.Color(BACKGROUND_COLOR);
+
+            // Càmera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = cameraZ;
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setPixelRatio(window.devicePixelRatio);
-            renderer.toneMapping = THREE.ReinhardToneMapping;
-            container.appendChild(renderer.domElement);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
 
-            const renderScene = new THREE.RenderPass(scene, camera);
-            const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-            bloomPass.threshold = 0;
-            bloomPass.strength = 1.2;
-            bloomPass.radius = 0.5;
-
-            composer = new THREE.EffectComposer(renderer);
-            composer.addPass(renderScene);
-            composer.addPass(bloomPass);
-
-            // A. L'ULL
-            eyeGroup = new THREE.Group();
-            const scleraGeo = new THREE.SphereGeometry(1, 32, 32);
-            const scleraMat = new THREE.MeshPhongMaterial({ color: 0xeeeeee, shininess: 100 });
-            eyeGroup.add(new THREE.Mesh(scleraGeo, scleraMat));
-
-            const irisGeo = new THREE.CircleGeometry(0.55, 32);
-            const irisMat = new THREE.MeshBasicMaterial({ color: CONFIG.colors.idle });
-            irisMesh = new THREE.Mesh(irisGeo, irisMat);
-            irisMesh.position.z = 0.95;
-            eyeGroup.add(irisMesh);
-
-            const pupilGeo = new THREE.CircleGeometry(0.25, 32);
-            const pupilMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
-            pupilMesh = new THREE.Mesh(pupilGeo, pupilMat);
-            pupilMesh.position.z = 0.96;
-            eyeGroup.add(pupilMesh);
-
-            const eyelidMat = new THREE.MeshPhongMaterial({ color: 0x111111, shininess: 50, side: THREE.DoubleSide });
-            
-            const topGeo = new THREE.SphereGeometry(1.02, 32, 16, 0, Math.PI * 2, 0, Math.PI/2);
-            eyelidTop = new THREE.Mesh(topGeo, eyelidMat);
-            eyelidTop.rotation.x = -Math.PI / 4;
-            eyeGroup.add(eyelidTop);
-
-            const botGeo = new THREE.SphereGeometry(1.02, 32, 16, 0, Math.PI * 2, Math.PI/2, Math.PI/2);
-            eyelidBottom = new THREE.Mesh(botGeo, eyelidMat);
-            eyelidBottom.rotation.x = Math.PI / 4;
-            eyeGroup.add(eyelidBottom);
-
-            scene.add(eyeGroup);
-
-            // B. EL CUB DE DADES
-            const cubeGeo = new THREE.BoxGeometry(3, 3, 3);
-            uniformsCube = {
-                iTime: { value: 0 },
-                iColor: { value: new THREE.Color(CONFIG.colors.idle) },
-                iActivity: { value: 1.0 }
-            };
-            
-            const cubeMat = new THREE.ShaderMaterial({
-                uniforms: uniformsCube,
-                vertexShader: dataCubeVertexShader,
-                fragmentShader: dataCubeFragmentShader,
-                transparent: true,
-                side: THREE.BackSide,
-                depthWrite: false,
-                blending: THREE.AdditiveBlending
-            });
-            
-            cubeMesh = new THREE.Mesh(cubeGeo, cubeMat);
-            const cubeOuter = new THREE.Mesh(cubeGeo, cubeMat.clone());
-            cubeOuter.material.side = THREE.FrontSide;
-            
-            const cubeGroup = new THREE.Group();
-            cubeGroup.add(cubeMesh);
-            cubeGroup.add(cubeOuter);
-            scene.add(cubeGroup);
-            this.cubeGroup = cubeGroup;
-
-            // C. LA PLACA BASE (Terra)
-            const planeGeo = new THREE.PlaneGeometry(20, 20, 20, 20);
-            const planeMat = new THREE.MeshBasicMaterial({ 
-                color: 0x004433, 
-                wireframe: true,
-                transparent: true,
-                opacity: 0.2
-            });
-            basePlane = new THREE.Mesh(planeGeo, planeMat);
-            basePlane.rotation.x = -Math.PI / 2;
-            basePlane.position.y = -2;
-            scene.add(basePlane);
-
-            // LLUMS
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.2);
+            // Llum
+            const ambientLight = new THREE.AmbientLight(ORACLE_COLOR, 0.5);
             scene.add(ambientLight);
-            const pointLight = new THREE.PointLight(0xffffff, 1);
-            pointLight.position.set(5, 5, 5);
+
+            const pointLight = new THREE.PointLight(ORACLE_COLOR, 2, 100);
+            pointLight.position.set(0, 0, 10);
             scene.add(pointLight);
 
-            window.addEventListener('resize', onWindowResize, false);
+            // Grup per als cubs
+            cubeGroup = new THREE.Group();
+            scene.add(cubeGroup);
+
+            // Crear i posicionar els cubs
+            const geometry = new THREE.BoxGeometry(1, 1, 1);
+            const material = new THREE.MeshPhongMaterial({
+                color: ORACLE_COLOR,
+                wireframe: true,
+                transparent: true,
+                opacity: 0.8
+            });
+
+            for (let i = 0; i < cubeCount; i++) {
+                const cube = new THREE.Mesh(geometry, material.clone());
+                cube.position.set(
+                    (Math.random() - 0.5) * 20,
+                    (Math.random() - 0.5) * 20,
+                    (Math.random() - 0.5) * 10
+                );
+                cube.rotation.set(Math.random() * 2 * Math.PI, Math.random() * 2 * Math.PI, Math.random() * 2 * Math.PI);
+                cubeGroup.add(cube);
+            }
+
+            window.addEventListener('resize', onWindowResize);
         }
 
+        /**
+         * Redimensiona l'escena 3D i el vídeo quan la finestra canvia de mida.
+         */
         function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
-            composer.setSize(window.innerWidth, window.innerHeight);
+            if (video) {
+                // Sincronitza la mida del canvas de vídeo amb la finestra per al fons
+                video.style.width = window.innerWidth + 'px';
+                video.style.height = window.innerHeight + 'px';
+            }
         }
 
-        // --- 3. INTEL·LIGÈNCIA ARTIFICIAL (MediaPipe) ---
-        
-        let visionModel;
-        let video;
-
-        async function initAI() {
-            // Comprovació que MediaPipe s'ha carregat bé.
-            if (!mpVision || !mpVision.FaceLandmarker) {
-                document.getElementById('loader-status').innerHTML = "ERROR CRÍTIC: Mòduls d'IA no carregats. Recarregueu la pàgina.";
-                return;
+        /**
+         * Mostra missatges a la pantalla.
+         * @param {string} message - El missatge a mostrar.
+         */
+        function displayOutput(message) {
+            const outputElement = document.getElementById('output-text');
+            if (outputElement) {
+                outputElement.textContent = message;
             }
+        }
 
-            video = document.getElementById('input-video');
-            const loaderStatus = document.getElementById('loader-status');
+        // --- INICIALITZACIÓ DE LA IA (MEDIAPIPE) ---
 
-            loaderStatus.innerText = "Carregant mòduls d'Intel·ligència Artificial...";
-
+        /**
+         * Inicialitza l'eina de reconeixement de gestos.
+         */
+        async function initAI() {
             try {
-                const vision = await mpVision.FilesetResolver.forVisionTasks(
-                    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
+                displayOutput("Carregant models de visió...");
+
+                // 1. Inicialitza FilesetResolver per trobar els fitxers de tasques
+                const fileset = await FilesetResolver.forVisionTasks(
+                    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
                 );
 
-                visionModel = await mpVision.FaceLandmarker.createFromOptions(vision, {
+                // 2. Crea el reconeixedor de gestos
+                recognizer = await GestureRecognizer.create(fileset, {
                     baseOptions: {
-                        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
-                        delegate: "GPU"
+                        modelAssetPath: "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
+                        delegate: "GPU" // Si està disponible
                     },
-                    outputFaceBlendshapes: true,
-                    runningMode: mpVision.RunningMode.VIDEO, 
-                    numFaces: 1
+                    runningMode: "VIDEO"
                 });
 
-                loaderStatus.innerText = "Sol·licitant accés a la càmera...";
+                displayOutput("Models neuronals carregats. Sol·licitant accés a la càmera...");
                 
-                // INICIALITZACIÓ DE LA CÀMERA AMB CONTROL D'ERRORS MILLORAT (v2.3)
-                await navigator.mediaDevices.getUserMedia({ video: true })
+                // Un cop carregat, intenta iniciar la càmera
+                initCamera();
+
+            } catch (error) {
+                console.error("Error càmera/IA: No es pot inicialitzar l'AI/MediaPipe.", error);
+                document.getElementById('status-message').textContent = "ERROR: No es pot inicialitzar el nucli IA.";
+                document.getElementById('camera-message').textContent = "Consulta la consola per a més detalls.";
+            }
+        }
+
+        // --- CÀMERA I DETECCIÓ ---
+
+        /**
+         * Sol·licita l'accés a la càmera i inicia la transmissió.
+         */
+        function initCamera() {
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                navigator.mediaDevices.getUserMedia({ video: true })
                     .then((stream) => {
+                        // Oculta la pantalla de càrrega
+                        document.getElementById('loading-overlay').style.display = 'none';
+
+                        // Crea l'element de vídeo
+                        video = document.createElement('video');
+                        video.id = 'webcam-video';
+                        video.style.position = 'absolute';
+                        video.style.top = '0';
+                        video.style.left = '0';
+                        video.style.objectFit = 'cover';
+                        video.style.zIndex = '-1';
+                        video.style.transform = 'scaleX(-1)'; // Mirall
+                        video.style.filter = 'grayscale(100%) brightness(0.5) contrast(1.5)';
+                        video.style.display = isWebcamVisible ? 'block' : 'none';
+                        document.body.appendChild(video);
+
+                        // Assigna el flux i inicia la reproducció
                         video.srcObject = stream;
-                        
-                        const startWebcam = () => {
+                        video.onloadedmetadata = () => {
                             video.play();
-                            loaderStatus.innerText = "Sistema Operatiu. Mirant...";
-                            document.getElementById('loader').style.opacity = '0';
-                            setTimeout(() => document.getElementById('loader').style.display = 'none', 1000);
-                            predictWebcam();
+                            onWindowResize(); // Assegura que el vídeo ompli la pantalla
+                            // Un cop el vídeo s'inicia, comencem l'animació
+                            requestAnimationFrame(animate);
                         };
-
-                        // Afegim el listener per assegurar que el vídeo estigui llest
-                        video.addEventListener('loadeddata', startWebcam);
-
-                        // Fallback: Si la càmera carrega però l'event 'loadeddata' no es dispara ràpidament (problema en certs dispositius)
-                        setTimeout(() => {
-                           if (video.srcObject && video.readyState >= 2 && loaderStatus.innerText === "Sol·licitant accés a la càmera...") {
-                                console.warn("Forçant l'inici de la càmera, loadeddata no s'ha disparat.");
-                                startWebcam();
-                                video.removeEventListener('loadeddata', startWebcam); // Evitem doble inici
-                           }
-                        }, 4000); // Temps màxim d'espera de 4 segons
-
                     })
                     .catch((err) => {
-                        console.error("Error al sol·licitar la càmera:", err);
-                        
-                        let message = "ERROR: Permís de càmera denegat o no disponible.";
-                        let color = '#ff0033';
-                        
-                        if (err.name === 'NotAllowedError') {
-                            message = "ERROR: Permís denegat. Has de donar accés a la càmera al navegador.";
-                        } else if (err.name === 'NotReadableError') {
-                            message = "ERROR: La càmera està ocupada. Tanca altres aplicacions que la facin servir.";
-                        } else if (err.name === 'SecurityError') {
-                            message = "ERROR: Es requereix una connexió segura (HTTPS).";
-                        }
-                        
-                        loaderStatus.innerHTML = message + 
-                            `<br><span style="font-size: 0.8em; opacity: 0.7;">
-                            Codi d'error: ${err.name || 'Desconegut'}. Verifica la configuració de permisos del teu navegador i recarrega la pàgina.
-                            </span>`;
-                        
-                        // Canviem l'estil per mostrar que és un error greu
-                        document.getElementById('loader').style.backgroundColor = '#100';
-                        document.getElementById('loader').style.color = color;
-                        document.querySelector('.spinner').style.borderTop = '3px solid #ff0033';
+                        console.error("Error en l'accés a la càmera: ", err);
+                        document.getElementById('status-message').textContent = "ERROR: Accés a la càmera denegat o no disponible.";
+                        document.getElementById('camera-message').textContent = "La interfície només funciona amb permís de càmera.";
                     });
-                
-            } catch (err) {
-                console.error("Error de càrrega d'IA:", err);
-                loaderStatus.innerHTML = `
-                    ERROR CRÍTIC AL NUCLI NEURONAL.<br>
-                    Codi d'error: ${err.name || 'Desconegut'}.
-                `;
+            } else {
+                console.error("getUserMedia no és compatible amb aquest navegador.");
+                document.getElementById('status-message').textContent = "ERROR: Navegador no compatible amb la càmera.";
             }
         }
 
-        async function predictWebcam() {
-            if (visionModel && video.readyState === video.HAVE_ENOUGH_DATA) {
-                const now = performance.now();
-                const result = visionModel.detectForVideo(video, now);
-                
-                if (result.faceLandmarks && result.faceLandmarks.length > 0) {
-                    STATE.faceDetected = true;
-                    processFaceData(result);
+        /**
+         * Executa el reconeixement de gestos i actualitza l'escena 3D.
+         */
+        function recognizeGestures() {
+            if (recognizer && video && video.readyState === 4) {
+                const startTimeMs = performance.now();
+                const results = recognizer.recognizeForVideo(video, lastDetectionTime);
+                const endTimeMs = performance.now();
+
+                lastDetectionTime = endTimeMs;
+                recognitionLatency = Math.round(endTimeMs - startTimeMs);
+
+                // Processar resultats
+                if (results.gestures.length > 0) {
+                    const gestureName = results.gestures[0][0].categoryName;
+                    const response = gestureResponses[gestureName] || "ANÀLISI: Gesto desconegut o no definit.";
+                    displayOutput(`[${gestureName}] - ${response}`);
+
+                    // Actualitzar la posició del cub principal (p. ex., el centre de l'escena)
+                    if (results.landmarks.length > 0) {
+                        const handLandmark = results.landmarks[0][0]; // Primer punt (canell) de la primera mà
+                        // Normalitza X/Y de 0-1 a coordenades 3D de la càmera (aprox. -10 a 10)
+                        const x = (handLandmark.x - 0.5) * 2 * (window.innerWidth / window.innerHeight) * 12;
+                        const y = -(handLandmark.y - 0.5) * 2 * 12; // Y invertida
+                        const z = handLandmark.z * -10; // Utilitzem Z per profunditat (aprox. -10 a 0)
+
+                        cubeGroup.position.set(x, y, z);
+                    }
                 } else {
-                    STATE.faceDetected = false;
+                    displayOutput("Esperant input. Mou la mà per iniciar la detecció.");
+                    // Si no hi ha gestos, torna el cub a la posició central lentament
+                    cubeGroup.position.lerp(new THREE.Vector3(0, 0, 0), 0.05);
                 }
             }
-            requestAnimationFrame(predictWebcam);
         }
 
-        function processFaceData(result) {
-            const blendshapes = result.faceBlendshapes[0].categories;
-            const blinkLeft = blendshapes.find(s => s.categoryName === 'eyeBlinkLeft')?.score || 0;
-            const blinkRight = blendshapes.find(s => s.categoryName === 'eyeBlinkRight')?.score || 0;
-            
-            STATE.userBlinking = (blinkLeft > CONFIG.thresholds.blink || blinkRight > CONFIG.thresholds.blink);
 
-            const landmarks = result.faceLandmarks[0];
-            const nose = landmarks[1];
-            
-            const lookX = (nose.x - 0.5) * -2;
-            const lookY = (nose.y - 0.5) * -2;
+        // --- BUCLE PRINCIPAL (ANIMACIÓ) ---
 
-            targetLook.set(lookX * 3, lookY * 3);
-
-            const leftEye = landmarks[33];
-            const rightEye = landmarks[263];
-            const faceWidth = Math.sqrt(Math.pow(leftEye.x - rightEye.x, 2));
-
-            if (faceWidth > 0.25) {
-                STATE.mode = 'SCARED';
-            } else if (STATE.userBlinking) {
-                STATE.mode = 'INTERESTED';
-            } else {
-                STATE.mode = 'IDLE';
-            }
-        }
-
-        // --- 4. BUCLE D'ANIMACIÓ I LÒGICA DE REACTIVITAT ---
-
-        const clock = new THREE.Clock();
-        const targetLook = new THREE.Vector2(0, 0);
-        const currentLook = new THREE.Vector2(0, 0);
-        let blinkValue = 0;
-
-        function animate() {
+        /**
+         * Bucle d'animació principal (cridat per requestAnimationFrame).
+         * @param {number} timestamp - Temps actual.
+         */
+        function animate(timestamp) {
             requestAnimationFrame(animate);
 
-            const dt = clock.getDelta();
-            const time = clock.getElapsedTime();
-
-            if (uniformsCube) {
-                uniformsCube.iTime.value = time;
-                
-                let targetColor = new THREE.Color(CONFIG.colors.idle);
-                let activity = 1.0;
-
-                if (STATE.mode === 'SCARED') {
-                    targetColor.setHex(CONFIG.colors.scared);
-                    activity = 5.0;
-                    this.cubeGroup.position.x = (Math.random() - 0.5) * 0.1;
-                    this.cubeGroup.position.y = (Math.random() - 0.5) * 0.1;
-                    pupilMesh.scale.lerp(new THREE.Vector3(0.5, 0.5, 1), 0.1);
-
-                } else if (STATE.mode === 'INTERESTED') {
-                    targetColor.setHex(CONFIG.colors.interested);
-                    activity = 2.0;
-                    this.cubeGroup.position.set(0,0,0);
-                    pupilMesh.scale.lerp(new THREE.Vector3(1.3, 1.3, 1), 0.1);
-                } else {
-                    this.cubeGroup.position.set(0,0,0);
-                    this.cubeGroup.rotation.y = Math.sin(time * 0.2) * 0.1;
-                    pupilMesh.scale.lerp(new THREE.Vector3(1, 1, 1), 0.1);
-                }
-
-                uniformsCube.iColor.value.lerp(targetColor, 0.05);
-                irisMesh.material.color.lerp(targetColor, 0.05);
-                uniformsCube.iActivity.value = THREE.MathUtils.lerp(uniformsCube.iActivity.value, activity, 0.05);
+            // 1. Càlcul de FPS (Estadístiques)
+            const delta = timestamp - lastTimestamp;
+            lastTimestamp = timestamp;
+            if (delta > 0) {
+                fps = Math.round(1000 / delta);
+                document.getElementById('fps-value').textContent = fps;
+                document.getElementById('latency-value').textContent = recognitionLatency;
             }
 
-            if (!STATE.faceDetected) {
-                const noiseX = Math.sin(time * 0.5) + Math.cos(time * 1.2);
-                const noiseY = Math.cos(time * 0.7);
-                targetLook.set(noiseX * 0.5, noiseY * 0.3);
-                STATE.mode = 'IDLE';
+            // 2. Lògica de Reconeixement
+            recognizeGestures();
+
+            // 3. Animació 3D
+            if (isCubesVisible) {
+                cubeGroup.rotation.y += 0.005;
+                cubeGroup.rotation.x += 0.002;
+                cubeGroup.children.forEach(cube => {
+                    cube.rotation.x += 0.01;
+                    cube.rotation.y += 0.005;
+                    cube.material.opacity = 0.8 + Math.sin(timestamp * 0.001) * 0.1; // Efecte pulsant
+                });
+                renderer.render(scene, camera);
             }
-
-            currentLook.lerp(targetLook, 0.1);
-            eyeGroup.lookAt(currentLook.x, currentLook.y, 5);
-
-            let targetBlink = STATE.userBlinking ? 1 : 0;
-            
-            if (!STATE.userBlinking && Math.random() < 0.005) {
-                targetBlink = 1;
-            }
-
-            blinkValue += (targetBlink - blinkValue) * 0.2;
-
-            eyelidTop.rotation.x = THREE.MathUtils.mapLinear(blinkValue, 0, 1, -Math.PI/4, 0);
-            eyelidBottom.rotation.x = THREE.MathUtils.mapLinear(blinkValue, 0, 1, Math.PI/4, 0);
-
-            composer.render();
         }
 
-        // --- INICI ---
-        window.onload = () => {
-            initThree();
-            initAI();
-            animate();
-        };
+        // --- CONTROLS D'INTERFÍCIE ---
+
+        document.getElementById('toggle-cubes').addEventListener('click', () => {
+            isCubesVisible = !isCubesVisible;
+            cubeGroup.visible = isCubesVisible;
+            document.getElementById('toggle-cubes').textContent = isCubesVisible ? 'CUB: ON' : 'CUB: OFF';
+            if (!isCubesVisible) {
+                // Si els cubs s'apaguen, forcem un render per netejar la pantalla
+                renderer.render(scene, camera);
+            }
+        });
+
+        document.getElementById('toggle-webcam').addEventListener('click', () => {
+            isWebcamVisible = !isWebcamVisible;
+            if (video) {
+                video.style.display = isWebcamVisible ? 'block' : 'none';
+            }
+            document.getElementById('toggle-webcam').textContent = isWebcamVisible ? 'WEBCAM: ON' : 'WEBCAM: OFF';
+        });
+
+        // --- INICI DE L'APLICACIÓ ---
+
+        window.onload = function () {
+            // Assegura que la font es carrega
+            document.getElementById('status-message').style.fontFamily = 'VT323, monospace';
+            document.getElementById('camera-message').style.fontFamily = 'VT323, monospace';
+
+            initThree(); // Inicialitza l'escena 3D
+            initAI();    // Carrega els models de la IA i, si té èxit, crida a initCamera()
+        }
 
     </script>
 </body>
 </html>
+
+
+
