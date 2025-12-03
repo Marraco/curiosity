@@ -4,9 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Oracle AI: La Finestra de Cúbic</title>
-    <!-- FIX CRÍTIC: MediaPipe s'ha de carregar com a mòdul (type="module") -->
+    
+    <!-- LLIÇÓ APRESA: TOTS els scripts que utilitzen 'export' (com MediaPipe) han de tenir type="module" -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js" type="module"></script>
+    
     <style>
         @font-face {
             font-family: 'VT323';
@@ -93,7 +95,7 @@
             left: 10px;
             display: flex;
             gap: 10px;
-            z-index: 101; /* Per sobre de la pantalla de càrrega */
+            z-index: 101;
         }
 
         .control-button {
@@ -144,14 +146,12 @@
     <!-- Vídeo i Canvas (s'afegiran dinàmicament) -->
 
     <script type="module">
-// --- FINAL PART 1 ---
+        // =================================================================
+        // FIX CRÍTIC: En embolicar TOT el JS en un sol <script type="module">
+        // evitem l'error de referència a 'mediapipeTasksVision' i el 'SyntaxError: Unexpected token export'.
+        // =================================================================
 
-// =================================================================
-// FIX CLAU: L'error "Unexpected token 'export'" es resol amb l'atribut
-// 'type="module"' en ambdues importacions.
-// =================================================================
-
-        // Importacions de MediaPipe (necessàries per l'error 'export')
+        // Importacions de MediaPipe (ara dins del context de mòdul)
         const { FilesetResolver, GestureRecognizer } = mediapipeTasksVision;
 
         // Variables Globals
@@ -448,6 +448,3 @@
     </script>
 </body>
 </html>
-
-
-
